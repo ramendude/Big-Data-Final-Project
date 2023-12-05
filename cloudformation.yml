@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A Simple Data Lake Setup
+
+Parameters:
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet ID for EMR instances
+  SecurityGroups:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: List of Security Group IDs for EMR instances
+  Ec2KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: finalproject-raw-data
+  ScriptBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: finalproject-glue-script
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: my_database
+
+  GlueCrawlerIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub glue-crawler-iam-role-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Path: !Sub /${AWS::StackName}/
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+
+  GlueJobIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub glue-job-iam-role-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Path: !Sub /${AWS::StackName}/
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+
+  GlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: my-crawler
+      Role: !GetAtt GlueCrawlerIAMRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Ref RawDataBucket
+
+  GlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: my-glue-job
+      Role: !GetAtt GlueJobIAMRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://finalproject-glue-script/master_script.py
+
+
+  GlueJob2:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: my-glue-job2
+      Role: !GetAtt GlueJobIAMRole.Arn
+      Command:
+        Name: glueetl2
+        ScriptLocation: s3://finalproject-glue-script/grandmaster_script.py
+
+  GlueJob3:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: my-glue-job3
+      Role: !GetAtt GlueJobIAMRole.Arn
+      Command:
+        Name: glueetl3
+        ScriptLocation: s3://finalproject-glue-script/challenger_script.py
+
+  AnalyticsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: finalproject-analytics
+
+  EmrServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub emr-service-role-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: elasticmapreduce.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole
+  
+  EmrJobFlowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub emr-job-flow-role-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role
+
+  EmrJobFlowInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub emr-job-flow-instance-profile-${AWS::StackName}
+      Path: /
+      Roles:
+        - !Ref EmrJobFlowRole
+
+  EMRCluster:
+    Type: 'AWS::EMR::Cluster'
+    Properties:
+      Name: MyEMRCluster
+      ReleaseLabel: emr-6.4.0
+      LogUri: !Sub s3://${EmrLogBucket}/${AWS::StackName}/
+      Instances:
+        MasterInstanceGroup:
+          InstanceCount: 1
+          InstanceType: m5.xlarge
+          Name: Master
+          Market: ON_DEMAND
+        CoreInstanceGroup:
+          InstanceCount: 1  
+          InstanceType: m5.xlarge
+          Name: Core
+          Market: ON_DEMAND
+        Ec2SubnetId: !Ref SubnetId
+        AdditionalMasterSecurityGroups: !Ref SecurityGroups
+        AdditionalSlaveSecurityGroups: !Ref SecurityGroups
+        Ec2KeyName: !Ref Ec2KeyName
+      Applications:
+        - Name: Spark
+      ServiceRole: !GetAtt EmrServiceRole.Arn
+      JobFlowRole: !Ref EmrJobFlowInstanceProfile
+
+  EmrLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub emr-log-bucket-${AWS::AccountId}-${AWS::StackName}
+
+
+  ResultBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: finalproject-results
+
+
+
+
+
+
+
+
+
+
+
+
